@@ -1,0 +1,23 @@
+{
+  "tavernDir": "C:\\SillyTavern",
+  "nodeExe": "",
+  "port": 8000,
+  "host": "127.0.0.1",
+  "logsDir": "logs",
+  "outLog": "st.out.log",
+  "errLog": "st.err.log",
+  "bridge": {
+    "enabled": true,
+    "port": 7861,
+    "script": "scripts/agnes-sd-bridge.mjs",
+    "configFile": ".secrets/agnes-bridge.json"
+  },
+  "tasks": {
+    "tavern": "SillyTavern-AutoStart",
+    "bridge": "Agnes-SDBridge-AutoStart"
+  },
+  "shortcuts": {
+    "enabled": true,
+    "prefix": "Tavern"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "host": "127.0.0.1",
+  "port": 7861,
+  "apiKey": "sk-替换成你自己的-API-Key",
+  "endpoint": "https://apihub.agnes-ai.com/v1/images/generations",
+  "models": ["agnes-image-2.5-flash"],
+  "defaultModel": "agnes-image-2.5-flash",
+  "responseFormat": "b64_json",
+  "appendNegativePrompt": false,
+  "timeoutMs": 300000,
+  "maxBatch": 4,
+  "tiers": [
+    { "max": 1024, "name": "1K" },
+    { "max": 2048, "name": "2K" },
+    { "max": 3072, "name": "3K" },
+    { "max": 999999999, "name": "4K" }
+  ],
+  "sharpPath": ""
+}
