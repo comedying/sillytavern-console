@@ -339,23 +339,37 @@ function Install-Shortcuts {
 }
 
 function Install-Tasks {
-    $node = $NodeExe
+    # 计划任务通过一个 .cmd 包装器启动，这样从任务启动的进程也会写日志（便于事后查死因）
+    $logRoot = Join-Path $ProjectDir 'logs'
+    New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
+    $ansi = [Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.ANSICodePage)
+
     if ($TavernTask) {
-        $a1 = New-ScheduledTaskAction -Execute $node -Argument 'server.js' -WorkingDirectory $TavernDir
+        $wrapper = Join-Path $logRoot 'run-tavern.cmd'
+        $content = "@echo off`r`ncd /d `"$TavernDir`"`r`n`"$NodeExe`" server.js 1>>`"$OutLog`" 2>>`"$ErrLog`"`r`n"
+        [IO.File]::WriteAllText($wrapper, $content, $ansi)
+        $a1 = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\cmd.exe" -Argument "/c `"$wrapper`"" -WorkingDirectory $TavernDir
         $t1 = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERNAME"
         $s1 = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
             -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
         Register-ScheduledTask -TaskName $TavernTask -Action $a1 -Trigger $t1 -Settings $s1 -RunLevel Highest -Force | Out-Null
-        Write-Host "  已注册计划任务（登录时启动酒馆）: $TavernTask" -ForegroundColor Green
+        Write-Host "  已注册计划任务（登录时启动酒馆，带日志）: $TavernTask" -ForegroundColor Green
+        Write-Host "      包装器: $wrapper"
     }
+
     if ($Config.bridge.enabled -and $BridgeTask) {
-        $rel = $Config.bridge.script
-        $a2 = New-ScheduledTaskAction -Execute $node -Argument "$rel --config `"$($Config.bridge.configFile)`"" -WorkingDirectory $ProjectDir
+        $bOut = Join-Path $logRoot 'agnes-bridge.out.log'
+        $bErr = Join-Path $logRoot 'agnes-bridge.err.log'
+        $wrapper2 = Join-Path $logRoot 'run-bridge.cmd'
+        $content2 = "@echo off`r`ncd /d `"$ProjectDir`"`r`n`"$NodeExe`" `"$BridgeScriptPath`" --config `"$BridgeConfigPath`" 1>>`"$bOut`" 2>>`"$bErr`"`r`n"
+        [IO.File]::WriteAllText($wrapper2, $content2, $ansi)
+        $a2 = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\cmd.exe" -Argument "/c `"$wrapper2`"" -WorkingDirectory $ProjectDir
         $t2 = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERNAME"
         $s2 = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
             -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
         Register-ScheduledTask -TaskName $BridgeTask -Action $a2 -Trigger $t2 -Settings $s2 -RunLevel Highest -Force | Out-Null
-        Write-Host "  已注册计划任务（登录时启动生图桥）: $BridgeTask" -ForegroundColor Green
+        Write-Host "  已注册计划任务（登录时启动生图桥，带日志）: $BridgeTask" -ForegroundColor Green
+        Write-Host "      包装器: $wrapper2"
     }
 }
 
