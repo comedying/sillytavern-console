@@ -497,34 +497,46 @@ function Set-Flip([bool]$on) {
     } catch { }
 }
 
-$script:SnapTimer = $null
+# 吸附动画的计时器必须建在脚本层、状态也放 $script:
+# 教训：之前这个 DispatcherTimer 是在 Start-Snap 函数里 new 的，tick 里用的
+# $from / $target / $i 都是函数局部变量。函数一返回，那个作用域就没了，tick
+# 里的变量失效，窗口根本不动 —— 表现就是「拖完总是弹回左边，摆不了位置」。
+$script:SnapFrom = 0.0
+$script:SnapTo = 0.0
+$script:SnapStep = 0
+$script:SnapSteps = 12
+
+$script:SnapTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:SnapTimer.Interval = [TimeSpan]::FromMilliseconds(16)
+$script:SnapTimer.Add_Tick({
+    $script:SnapStep++
+    $p = [Math]::Min(1.0, $script:SnapStep / [double]$script:SnapSteps)
+    $eased = 1 - [Math]::Pow(1 - $p, 3)
+    $win.Left = $script:SnapFrom + ($script:SnapTo - $script:SnapFrom) * $eased
+    if ($p -ge 1.0) {
+        $script:SnapTimer.Stop()
+        $script:PetBaseTop = [int]$win.Top
+        Save-PetPosition   # 动画停下之后再记位置，否则记的是吸附前的坐标
+    }
+})
+
 function Start-Snap {
     if (-not [bool]$S['snapEdge']) { return }
     $wa = [System.Windows.SystemParameters]::WorkArea
     $w = $win.Width
     $leftTarget = $wa.Left + 6
     $rightTarget = $wa.Right - $w - 6
-    $toRight = ($win.Left + ($w / 2)) -gt ($wa.Left + $wa.Width / 2)
-    $target = if ($toRight) { $rightTarget } else { $leftTarget }
-    Set-Flip (-not $toRight)   # 贴在左边就翻过去面向屏幕
-
-    $from = $win.Left
-    $steps = 10
-    $i = 0
-    if ($script:SnapTimer) { $script:SnapTimer.Stop() }
-    $script:SnapTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $script:SnapTimer.Interval = [TimeSpan]::FromMilliseconds(16)
-    $script:SnapTimer.Add_Tick({
-        $i++
-        $p = [Math]::Min(1.0, $i / [double]$steps)
-        $eased = 1 - [Math]::Pow(1 - $p, 3)
-        $win.Left = $from + ($target - $from) * $eased
-        if ($p -ge 1.0) {
-            $script:SnapTimer.Stop()
-            $script:PetBaseTop = [int]$win.Top
-            Save-PetPosition   # 动画停下之后再记位置，否则记的是吸附前的坐标
-        }
-    })
+    $dLeft = $win.Left - $leftTarget
+    $dRight = $rightTarget - $win.Left
+    # 只有落点离某一边足够近才吸附；离两边都远就停在你放下的地方。
+    # 否则拖到哪儿都会被弹到边上，等于没法自由摆放。
+    if ([Math]::Min($dLeft, $dRight) -gt 150) { return }
+    $toRight = $dRight -lt $dLeft
+    Set-Flip (-not $toRight)   # 贴在左边就翻过去面朝屏幕内
+    $script:SnapFrom = $win.Left
+    $script:SnapTo = $(if ($toRight) { $rightTarget } else { $leftTarget })
+    $script:SnapStep = 0
+    $script:SnapTimer.Stop()
     $script:SnapTimer.Start()
 }
 
