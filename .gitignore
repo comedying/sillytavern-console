@@ -1,8 +1,12 @@
 # 本地/私有配置（不要提交）
 config.json
+pet-settings.json
 .secrets/
 logs/
 *.log
+
+# 桌宠第一次运行会自动生成这几个提示音（想换成自己的就覆盖同名文件）
+assets/sounds/
 
 # 依赖与构建产物
 node_modules/

@@ -12,6 +12,17 @@
     "script": "scripts/agnes-sd-bridge.mjs",
     "configFile": ".secrets/agnes-bridge.json"
   },
+  "pet": {
+    "width": 212,
+    "customImage": "",
+    "imageDir": "",
+    "opacity": 0.78,
+    "fadeWhenIdle": true,
+    "bounce": true,
+    "snapEdge": true,
+    "sfx": true,
+    "volume": 0.7
+  },
   "tasks": {
     "tavern": "SillyTavern-AutoStart",
     "bridge": "Agnes-SDBridge-AutoStart"

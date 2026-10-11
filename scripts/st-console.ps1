@@ -19,9 +19,12 @@
 #>
 param(
     [ValidateSet('menu', 'start', 'stop', 'restart', 'status', 'logs',
-        'bridge-start', 'bridge-stop', 'install-shortcuts', 'install-tasks', 'where')]
+        'bridge-start', 'bridge-stop', 'install-shortcuts', 'install-tasks', 'where',
+        'none')]
     [string]$Action = 'menu',
-    [string]$ConfigPath = ''
+    [string]$ConfigPath = '',
+# 供桌宠（st-pet.ps1）等非交互调用：结束后不要停下来等回车。
+    [switch]$NoPause
 )
 
 $ErrorActionPreference = 'Continue'
@@ -101,6 +104,18 @@ function Get-ConsoleConfig {
         shortcuts = [ordered]@{
             enabled = $true
             prefix  = 'Tavern'
+        }
+        # 桌宠（st-pet.ps1）用的外观设置
+        pet       = [ordered]@{
+            width        = 212     # 桌面上的宽度（像素，140–380）
+            customImage  = ''      # 单张自定义形象（在气泡「设置 → 换形象…」里选）
+            imageDir     = ''      # 留空 = 用酒馆自带角色图
+            opacity      = 0.78    # 不碰它的时候多淡
+            fadeWhenIdle = $true   # 是否启用上面那个「变淡」
+            bounce       = $true   # 按压 Q 弹反馈
+            snapEdge     = $true   # 拖到屏幕边上自动吸附
+            sfx          = $true   # 音效开关
+            volume       = 0.7     # 音效音量 0–1
         }
     }
 
@@ -336,6 +351,24 @@ function Install-Shortcuts {
         $lnk = New-ConsoleShortcut -Name $it.Name -ScriptAction $it.Action -Description $it.Desc -IconPath $icon
         Write-Host "  已创建快捷方式: $lnk" -ForegroundColor Green
     }
+    $petLnk = New-PetShortcut -Name "$prefix Pet" -Description '桌面小挂件：点一下弹按钮' -IconPath $icon
+    Write-Host "  已创建快捷方式: $petLnk" -ForegroundColor Green
+}
+
+function New-PetShortcut {
+    param([string]$Name, [string]$Description, [string]$IconPath)
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $lnk = Join-Path $desktop ($Name + '.lnk')
+    $sh = New-Object -ComObject WScript.Shell
+    $s = $sh.CreateShortcut($lnk)
+    $s.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    # -WindowStyle Hidden 只用来藏掉控制台；桌宠窗口本身由脚本自己强制显示出来。
+    $s.Arguments = "-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ScriptDir\st-pet.ps1`""
+    $s.WorkingDirectory = $ProjectDir
+    $s.Description = $Description
+    if ($IconPath -and (Test-Path $IconPath)) { $s.IconLocation = $IconPath }
+    $s.Save()
+    return $lnk
 }
 
 function Install-Tasks {
@@ -414,6 +447,7 @@ function Show-Menu {
 }
 
 switch ($Action) {
+    'none'              { }   # 只加载配置与函数，供 st-pet.ps1 点源复用
     'status'            { Show-Status }
     'where'             { Show-ConfigInfo }
     'logs'              { Show-Logs }
@@ -421,8 +455,8 @@ switch ($Action) {
     'install-tasks'     { Install-Tasks }
     'bridge-start'      { Start-Bridge; Write-Host '  生图桥已处理' }
     'bridge-stop'       { Stop-Bridge; Write-Host '  生图桥已停止' }
-    'start'             { Start-Tavern; Write-Host ''; Read-Host '  按回车关闭窗口' }
-    'stop'              { Stop-Tavern; Write-Host ''; Read-Host '  按回车关闭窗口' }
-    'restart'           { Stop-Tavern; Start-Tavern; Write-Host ''; Read-Host '  按回车关闭窗口' }
+    'start'             { Start-Tavern; Write-Host ''; if (-not $NoPause) { Read-Host '  按回车关闭窗口' } }
+    'stop'              { Stop-Tavern; Write-Host ''; if (-not $NoPause) { Read-Host '  按回车关闭窗口' } }
+    'restart'           { Stop-Tavern; Start-Tavern; Write-Host ''; if (-not $NoPause) { Read-Host '  按回车关闭窗口' } }
     default             { Show-Menu }
 }
