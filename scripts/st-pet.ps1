@@ -435,6 +435,7 @@ $script:BusyLook = 'starting'
 $script:SetupDone = $false
 
 function Apply-PetSize {
+    $oldPetH = $script:PetH
     $w = [int]$S['width']
     if ($w -lt 140) { $w = 140 }
     if ($w -gt 380) { $w = 380 }
@@ -446,8 +447,21 @@ function Apply-PetSize {
     $petHost.Height = $script:PetH
     $petImg.Width = $w
     $petImg.Height = $script:PetH
-    if (-not $script:PetExpanded) { $win.Height = $script:PetH }
     $lblSize.Text = "$w"
+
+    if ($script:PetExpanded) {
+        # 气泡开着的时候改大小：把窗口上缘（也就是气泡）钉死不动，让小人往下长。
+        # 否则窗口下缘不动、小人往上长，气泡会被一起顶上去，跑离鼠标，
+        # 拖大小滑块时手感和「一边拖一边躲」一样。
+        $bh = $win.Height - $oldPetH
+        if ($bh -lt 0) { $bh = 0 }
+        $win.Height = $script:PetH + $bh
+    } else {
+        # 收起状态：脚底不动，往上长
+        $win.Top = $win.Top + ($oldPetH - $script:PetH)
+        $script:PetBaseTop = [int]$win.Top
+        $win.Height = $script:PetH
+    }
 }
 
 function Apply-PetOpacity {
@@ -478,6 +492,27 @@ function Invoke-Squash([double]$sx, [double]$sy, [int]$ms, [bool]$elastic) {
             $petScale.BeginAnimation($prop, $anim)
         }
     } catch { }
+}
+
+# 点击的 Q 弹分三步：按下挤扁 -> 松手拉长 -> 带过冲地回弹落定。
+# 同样必须建在脚本层。之前原地点击几乎看不到弹，就是因为松手那一下只做了
+# 「从挤扁值回到 1.0」这一小段，幅度太小；拖拽时挤扁能一直保持，才有感觉。
+$script:BounceStage = 0
+$script:BounceTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:BounceTimer.Interval = [TimeSpan]::FromMilliseconds(130)
+$script:BounceTimer.Add_Tick({
+    $script:BounceTimer.Stop()
+    if ($script:BounceStage -eq 2) {
+        Invoke-Squash 1.0 1.0 430 $true    # 带过冲弹回原状
+        $script:BounceStage = 0
+    }
+})
+function Start-ClickBounce {
+    if (-not [bool]$S['bounce']) { return }
+    Invoke-Squash 0.94 1.10 130 $false     # 先拉长
+    $script:BounceStage = 2
+    $script:BounceTimer.Stop()
+    $script:BounceTimer.Start()
 }
 
 # ---------------------------------------------------------------- 吸附 & 翻转
@@ -773,7 +808,7 @@ $btnMore.Add_Click({
 
 $petHost.Add_MouseLeftButtonDown({
     Play-Sfx 'press'
-    Invoke-Squash 1.12 0.88 110 $false
+    Invoke-Squash 1.16 0.84 90 $false      # 按下先挤扁
     $beforeLeft = $win.Left
     $beforeTop = $win.Top
     $dragged = $true
@@ -783,8 +818,8 @@ $petHost.Add_MouseLeftButtonDown({
     }
     if ($script:PetExpanded) { $script:PetBaseTop = [int]($win.Top + ($win.Height - $script:PetH)) }
     else { $script:PetBaseTop = [int]$win.Top }
-    Invoke-Squash 1.0 1.0 460 $true
     Play-Sfx 'release'
+    Start-ClickBounce                      # 松手：拉长 -> 过冲回弹
     if (-not $dragged) {
         Set-Bubble (-not $script:PetExpanded)
     } else {
