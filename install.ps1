@@ -149,20 +149,33 @@ Write-Head '5/5 快捷方式与开机自启'
 
 $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 
+$script:StepFailed = $false
+
 if ($NoShortcuts) { Write-Warn2 '已跳过桌面快捷方式（-NoShortcuts）' }
 else {
     & $psExe -NoProfile -ExecutionPolicy Bypass -File $ConsoleScript -Action install-shortcuts
+    if ($LASTEXITCODE -ne 0) { Write-Warn2 "桌面快捷方式创建失败（退出码 $LASTEXITCODE）"; $script:StepFailed = $true }
 }
 
 if ($NoTasks) { Write-Warn2 '已跳过计划任务（-NoTasks）' }
 else {
+    # 注册计划任务要管理员权限；失败必须让用户知道，否则会以为自启已经装好
     & $psExe -NoProfile -ExecutionPolicy Bypass -File $ConsoleScript -Action install-tasks
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn2 "开机自启注册失败（退出码 $LASTEXITCODE）——多半是没以管理员身份运行"
+        Write-Warn2 '  自启没装上，但其它都装好了；需要的话用管理员 PowerShell 再跑一次本脚本'
+        $script:StepFailed = $true
+    }
 }
 
 # ---------------------------------------------------------------- 收尾
 Write-Host ''
 Write-Host '=========================================' -ForegroundColor Cyan
-Write-Host '   安装完成' -ForegroundColor Green
+if ($script:StepFailed) {
+    Write-Host '   安装完成（有步骤失败，见上面的 [!]）' -ForegroundColor Yellow
+} else {
+    Write-Host '   安装完成' -ForegroundColor Green
+}
 Write-Host '=========================================' -ForegroundColor Cyan
 Write-Host ''
 Write-Host '  下一步：'

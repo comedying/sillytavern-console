@@ -274,9 +274,11 @@ const routes = {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host ?? '127.0.0.1'}`)
-  const key = `${req.method} ${url.pathname}`
+  let key = `${req.method} ${req.url}`
   try {
+    // 解析 URL 也放进 try：畸形请求行会让它抛错，落在外面就是未捕获的 rejection
+    const url = new URL(req.url, `http://${req.headers.host ?? '127.0.0.1'}`)
+    key = `${req.method} ${url.pathname}`
     if (key === 'POST /sdapi/v1/txt2img') {
       const body = await readJsonBody(req)
       return json(res, await handleTxt2Img(body))
@@ -296,7 +298,10 @@ const server = http.createServer(async (req, res) => {
 
 async function main() {
   const configPath = resolveConfigPath()
-  config = JSON.parse(await readFile(configPath, 'utf8'))
+  // 记事本存过的 JSON 会带 BOM，JSON.parse 不认，直接抛 "Unexpected token"，
+  // 桥就再也起不来了 —— 这里先剥掉
+  const rawConfig = await readFile(configPath, 'utf8')
+  config = JSON.parse(rawConfig.replace(/^﻿/, ''))
   if (!config.apiKey) throw new Error(`配置缺少 apiKey: ${configPath}`)
   config.host = config.host ?? '127.0.0.1'
   config.port = Number(config.port) || 7861
@@ -311,6 +316,12 @@ async function main() {
 
   await log(`sd-bridge 启动 | 配置=${configPath}`)
   await log(`监听 http://${config.host}:${config.port} | 模型=${config.models.join(', ')}`)
+  // 端口被占（EADDRINUSE）时 listen 抛的是 'error' 事件；不接住就是未捕获异常，
+  // 进程直接崩，日志里连一句「启动失败」都不会有
+  server.on('error', async (error) => {
+    await log(`监听失败: ${error?.message ?? error}`)
+    process.exit(1)
+  })
   server.listen(config.port, config.host, () => log(`已就绪：把酒馆生图源设为 A1111，URL 填 http://${config.host}:${config.port}`))
 }
 

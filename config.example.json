@@ -19,6 +19,7 @@
     "opacity": 0.78,
     "fadeWhenIdle": true,
     "bounce": true,
+    "breath": false,
     "snapEdge": true,
     "sfx": true,
     "volume": 0.7

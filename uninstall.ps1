@@ -40,11 +40,39 @@ if (Test-Path $ConfigPath) {
 }
 
 Write-Host '== 停止进程'
+# 先看桌宠（它自己记着 pid）
+$petPidFile = Join-Path $ProjectDir 'logs\pet.pid'
+if (Test-Path $petPidFile) {
+    $pp = (Get-Content $petPidFile -Raw -ErrorAction SilentlyContinue)
+    if ($pp -and $pp.Trim() -match '^\d+$') {
+        $pp = [int]$pp.Trim()
+        if (Get-Process -Id $pp -ErrorAction SilentlyContinue) {
+            Stop-Process -Id $pp -Force -ErrorAction SilentlyContinue
+            Write-Ok "已停止桌宠 (pid $pp)"
+        }
+    }
+    Remove-Item -LiteralPath $petPidFile -Force -ErrorAction SilentlyContinue
+}
+
+# 端口上的进程要核对身份再杀：8000 / 7861 很常见，别把别人占着的程序干掉
+function Test-PortOwnerIsOurs([int]$ProcId) {
+    try {
+        $ci = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcId" -ErrorAction Stop
+        if (-not $ci) { return $false }
+        if ($ci.Name -notmatch '^(node|nodejs)\.exe$') { return $false }
+        if ([string]::IsNullOrWhiteSpace($ci.CommandLine)) { return $false }
+        return ($ci.CommandLine -like '*server.js*' -or $ci.CommandLine -like '*agnes-sd-bridge*' -or $ci.CommandLine -like "*$ProjectDir*")
+    } catch { return $false }
+}
 foreach ($p in @($port, $bridgePort)) {
     $c = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($c) {
-        Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
-        Write-Ok "已停止端口 $p 上的进程 (pid $($c.OwningProcess))"
+        if (Test-PortOwnerIsOurs $c.OwningProcess) {
+            Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
+            Write-Ok "已停止端口 $p 上的进程 (pid $($c.OwningProcess))"
+        } else {
+            Write-Warn2 "端口 $p 被 pid $($c.OwningProcess) 占用，但它不像是本工具启动的 node，已跳过"
+        }
     }
 }
 
@@ -62,13 +90,13 @@ Get-ChildItem $desktop -Filter '*.lnk' -ErrorAction SilentlyContinue | ForEach-O
     $sh = New-Object -ComObject WScript.Shell
     $target = ''
     try { $target = $sh.CreateShortcut($_.FullName).Arguments } catch { }
-    if ($target -like "*st-console.ps1*") {
+    if ($target -like "*st-console.ps1*" -or $target -like "*st-pet.ps1*") {
         Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
         Write-Ok "已删除 $($_.Name)"
     }
 }
-# 兜底：按配置前缀名字删
-foreach ($n in @("$prefix Console", "$prefix Start", "$prefix Stop")) {
+# 兜底：按配置前缀名字删（含桌宠）
+foreach ($n in @("$prefix Console", "$prefix Start", "$prefix Stop", "$prefix Pet")) {
     $lnk = Join-Path $desktop ($n + '.lnk')
     if (Test-Path $lnk) { Remove-Item -LiteralPath $lnk -Force; Write-Ok "已删除 $n.lnk" }
 }

@@ -91,24 +91,26 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File scripts\st-pet.ps1
 怎么用：
 
 - 一个常驻角落的小人（默认用酒馆自带的角色 Seraphina），不占任务栏、不抢焦点
-- **点她一下** → 头顶弹出气泡：启动 / 停止 / 重启 / 生图桥 / 打开 / 更多 / **设置**
+- **点她一下** → 头顶弹出小气泡：状态 + 「启动 / 停止」，日常操作就这两下
+- **点她右上角的小方块** → 展开功能面板：重启 / 生图桥 / 打开 / 更多 / **设置**
 - **按压有 Q 弹反馈**：按下挤扁、松手带一点回弹（参考小鲸鱼挂件的做法），不喜欢可以关
 - **有音效**：按压、松开、启动、停止各一声，音量可调、可整体关闭
 - **拖她到屏幕边上会自动吸附**，吸在左边时她会左右翻转面朝屏幕内
-- **右键她** → 快捷菜单：打开酒馆 / 启动 / 停止 / 重启 / 设置 / 查看日志 / 回到墙边 / 退出
+- **右键她** → 快捷菜单：打开酒馆 / 启动 / 停止 / 重启 / 设置… / 查看日志 / 退出
+- 「更多」菜单里还有：查看日志文件夹 / 复制局域网地址 / 重新载入形象 / 回到墙边 / 收起弹窗 / 退出桌宠
 - 平时半透明不碍事，鼠标移上去恢复清晰
 - 脚边挂一个状态点：绿=运行中，红=未运行
 
-#### 气泡里的「设置」页
+#### 面板里的「设置」页
 
-不用去改配置文件，点气泡里的 **设置** 就能调，改完立刻生效、自动记住：
+不用去改配置文件，点面板里的 **设置** 就能调，改完立刻生效、自动记住：
 
 | 项 | 作用 |
 |---|---|
 | 大小 | 她在桌面上多大（140–380） |
 | 不透明度 | 不碰她时有多淡 |
 | 音量 | 音效音量，旁边有「试听音效」 |
-| 音效 / Q弹 / 吸附边缘 | 三个开关，想关哪个关哪个 |
+| 音效 / Q弹 / 呼吸 / 吸附边缘 | 四个开关，想关哪个关哪个。呼吸默认关：它是持续动画，透明窗口只能软件渲染，一直动会白吃 CPU |
 | 换形象… | 直接选一张 PNG（建议竖构图、透明底），立刻换 |
 | 恢复默认 | 一键回到出厂设置 |
 
@@ -131,7 +133,7 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File scripts\st-pet.ps1
 
 #### 换成你自己的形象
 
-最省事的做法：气泡 → **设置** → **换形象…**，选一张 PNG 就行。
+最省事的做法：面板 → **设置** → **换形象…**，选一张 PNG 就行。
 
 默认形象直接读酒馆自己的角色图（`<酒馆目录>\default\content\Seraphina\*.png`），
 所以**仓库里不含任何图片**，也不涉及转发别人的美术资源。
@@ -147,7 +149,7 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File scripts\st-pet.ps1
 - 至少有一个文件名里带 `neutral` 的，当兜底
 - 想按状态换表情，让文件名包含这些词：`joy`（开心）、`sadness`（失落）、
   `nervousness`（紧张）、`disappointment`（沮丧）、`fear`（害怕）
-- 缺哪个就用 `neutral` 顶上；`width` 控制她在桌面上多宽（120–420）
+- 缺哪个就用 `neutral` 顶上；`width` 控制她在桌面上多宽（140–380）
 
 > 效果最好的是竖构图、透明底的全身图；只有上半身的也能用。
 
@@ -195,7 +197,7 @@ st-console/
 |---|---|---|
 | `tavernDir` | 自动探测 | SillyTavern 目录（必须包含 `server.js`） |
 | `nodeExe` | 自动探测 | `node.exe` 完整路径 |
-| `port` | `8000` | 酒馆监听端口 |
+| `port` | `8000` | 酒馆监听端口（启动时以 `--port` 显式传给 `server.js`，会覆盖酒馆自己 `config.yaml` 里的端口） |
 | `logsDir` | `logs` | 相对 `tavernDir` 的日志目录 |
 | `outLog` / `errLog` | `st.out.log` / `st.err.log` | 日志文件名 |
 | `bridge.enabled` | `true` | 是否启用生图桥管理 |
@@ -205,6 +207,7 @@ st-console/
 | `tasks.tavern` / `tasks.bridge` | `SillyTavern-AutoStart` / `Agnes-SDBridge-AutoStart` | 计划任务名 |
 | `shortcuts.enabled` | `true` | 是否创建桌面快捷方式 |
 | `shortcuts.prefix` | `Tavern` | 快捷方式名前缀（中文也可以，例如 `酒馆`） |
+| `pet.*` | 见 `config.example.json` | 桌宠外观默认值（大小 / 透明度 / 音效 / Q弹 / 呼吸 / 吸附 / 形象）。桌宠「设置」页里改过的值存在 `pet-settings.json`，优先级更高 |
 
 > `tavernDir` 没填或填错时，控制台会明确提示，并在几个常见位置自动探测。
 
@@ -319,7 +322,8 @@ curl.exe -X POST http://127.0.0.1:7861/sdapi/v1/txt2img -H "Content-Type: applic
 ## 常见问题
 
 **Q：启动报「端口被占用」/ 状态显示运行中但页面打不开？**
-A：先 `-Action status` 看 pid，再 `-Action restart`；本工具的停止动作会顺带结束占用该端口的进程。
+A：先 `-Action status` 看 pid，再 `-Action restart`。停止动作只会结束「确认是自己拉起的 node 进程」
+（核对进程名与命令行）；如果端口是被别的程序占着，会明确提示、不会去动它，请自行处理。
 
 **Q：find 不到酒馆目录？**
 A：在 `config.json` 里把 `tavernDir` 写成含 `server.js` 的那个目录（注意 JSON 里反斜杠要写两个：

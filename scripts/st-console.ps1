@@ -28,6 +28,7 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+$script:TaskInstallFailed = $false
 
 # ---------------------------------------------------------------- 路径与配置
 
@@ -172,6 +173,21 @@ function Get-BridgePid {
     return $null
 }
 
+# 光看「谁占着端口」不足以认定它就是酒馆：8000 / 7861 很常见，别把别人的程序杀了。
+# 杀进程之前一律先核对进程名与命令行。
+function Test-ProcLooksLike([int]$ProcId, [string]$Pattern) {
+    try {
+        $ci = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcId" -ErrorAction Stop
+        if (-not $ci) { return $false }
+        if ($ci.Name -notmatch '^(node|nodejs)\.exe$') { return $false }
+        if ([string]::IsNullOrWhiteSpace($ci.CommandLine)) { return $false }
+        return ($ci.CommandLine -like "*$Pattern*")
+    } catch { return $false }
+}
+
+function Get-TavernPattern { 'server.js' }
+function Get-BridgePattern { Split-Path -Leaf $BridgeScriptPath }
+
 function Get-LocalIPv4 {
     # 排除虚拟网卡（Clash/Tailscale/WireGuard/WSL/Hyper-V/蓝牙等），优先有默认网关的物理网卡
     $exclude = 'Clash|Meta Tunnel|Tailscale|WireGuard|vEthernet|Hyper-V|Loopback|VPN|TAP-|Bluetooth|Virtual|WSL'
@@ -242,7 +258,10 @@ function Start-Tavern {
     if (Get-TavernPid) { Write-Host '  它已经在运行了，不用重复启动。' -ForegroundColor Yellow; return }
     New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
     $env:NODE_ENV = 'production'
-    Start-Process -FilePath $NodeExe -ArgumentList 'server.js' -WorkingDirectory $TavernDir `
+    # 端口显式传给 server.js：config.json 里的 port 才是准的。
+    # 不传的话端口只由酒馆自己的 config.yaml 决定，两边一旦对不上，
+    # 状态永远显示「未运行」，点启动还会再拉起一个撞端口立刻退出的实例。
+    Start-Process -FilePath $NodeExe -ArgumentList @('server.js', '--port', "$Port") -WorkingDirectory $TavernDir `
         -WindowStyle Hidden -RedirectStandardOutput $OutLog -RedirectStandardError $ErrLog
     Write-Host '  正在启动' -NoNewline
     for ($i = 1; $i -le 20; $i++) {
@@ -265,6 +284,11 @@ function Start-Tavern {
 function Stop-Tavern {
     $p = Get-TavernPid
     if (-not $p) { Write-Host '  它本来就没在运行。' -ForegroundColor Yellow; return }
+    if (-not (Test-ProcLooksLike $p (Get-TavernPattern))) {
+        Write-Host "  ! 端口 $Port 被 pid $p 占用，但它不像酒馆（不是 node server.js），我不会动它。" -ForegroundColor Red
+        Write-Host '    如果确认要结束它，请自行在任务管理器里处理。' -ForegroundColor Yellow
+        return
+    }
     Write-Host "  正在停止酒馆 (pid $p) ..."
     Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
     if ($TavernTask) { Stop-ScheduledTask -TaskName $TavernTask -ErrorAction SilentlyContinue }
@@ -293,11 +317,19 @@ function Start-Bridge {
         -RedirectStandardOutput (Join-Path $bridgeLogDir 'agnes-bridge.out.log') `
         -RedirectStandardError (Join-Path $bridgeLogDir 'agnes-bridge.err.log')
     for ($i = 1; $i -le 12; $i++) { Start-Sleep -Seconds 1; if (Get-BridgePid) { return } }
+    # 12 秒还没起来，把错误日志亮出来，别让用户只看到一句「未运行」
+    Write-Host '  ! 生图桥没能启动，错误日志末尾：' -ForegroundColor Red
+    $berr = Join-Path $bridgeLogDir 'agnes-bridge.err.log'
+    if (Test-Path $berr) { Get-Content $berr -Tail 12 } else { Write-Host "    (没有 err 日志，看看 $BridgeConfigPath 是否配好)" -ForegroundColor Yellow }
 }
 
 function Stop-Bridge {
     $bp = Get-BridgePid
     if (-not $bp) { return }
+    if (-not (Test-ProcLooksLike $bp (Get-BridgePattern))) {
+        Write-Host "  ! 端口 $BridgePort 被 pid $bp 占用，但它不是生图桥，跳过。" -ForegroundColor Yellow
+        return
+    }
     Stop-Process -Id $bp -Force -ErrorAction SilentlyContinue
     if ($BridgeTask) { Stop-ScheduledTask -TaskName $BridgeTask -ErrorAction SilentlyContinue }
 }
@@ -314,11 +346,17 @@ function Show-Logs {
         $err = Get-Content $ErrLog -Tail 6
         if ($err) { Write-Host ''; Write-Host '  --- 错误日志末尾 ---' -ForegroundColor DarkYellow; $err }
     }
-    $bridgeLog = Join-Path $ProjectDir 'logs\agnes-bridge.log'
-    if ($Config.bridge.enabled -and (Test-Path $bridgeLog)) {
+    if ($Config.bridge.enabled) {
+        $blog = Join-Path $ProjectDir 'logs'
         Write-Host ''
         Write-Host '  --- 生图桥日志末尾 ---' -ForegroundColor Cyan
-        Get-Content $bridgeLog -Tail 8
+        foreach ($f in @('agnes-bridge.log', 'agnes-bridge.out.log', 'agnes-bridge.err.log')) {
+            $p = Join-Path $blog $f
+            if (Test-Path $p) {
+                $tail = Get-Content $p -Tail 8 -ErrorAction SilentlyContinue
+                if ($tail) { Write-Host "  [$f]"; $tail }
+            }
+        }
     }
     Write-Host ''
 }
@@ -375,19 +413,29 @@ function Install-Tasks {
     # 计划任务通过一个 .cmd 包装器启动，这样从任务启动的进程也会写日志（便于事后查死因）
     $logRoot = Join-Path $ProjectDir 'logs'
     New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
-    $ansi = [Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.ANSICodePage)
+    if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
+    # cmd.exe 执行批处理用的是 OEM 代码页，不是 ANSI 的；写错了非 ASCII 路径会变成 "?"
+    $oem = [Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage)
 
     if ($TavernTask) {
         $wrapper = Join-Path $logRoot 'run-tavern.cmd'
-        $content = "@echo off`r`ncd /d `"$TavernDir`"`r`n`"$NodeExe`" server.js 1>>`"$OutLog`" 2>>`"$ErrLog`"`r`n"
-        [IO.File]::WriteAllText($wrapper, $content, $ansi)
+        # 日志目录用 if not exist 兜底建一次：cmd 打不开重定向目标时会整行不执行，
+        # 于是 node 根本不跑、任务每登录一次失败一次（目录没了也一样）
+        $content = "@echo off`r`ncd /d `"$TavernDir`"`r`nif not exist `"$LogDir`" mkdir `"$LogDir`"`r`n`"$NodeExe`" server.js --port $Port 1>>`"$OutLog`" 2>>`"$ErrLog`"`r`n"
+        [IO.File]::WriteAllText($wrapper, $content, $oem)
         $a1 = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\cmd.exe" -Argument "/c `"$wrapper`"" -WorkingDirectory $TavernDir
         $t1 = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERNAME"
         $s1 = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
             -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
-        Register-ScheduledTask -TaskName $TavernTask -Action $a1 -Trigger $t1 -Settings $s1 -RunLevel Highest -Force | Out-Null
-        Write-Host "  已注册计划任务（登录时启动酒馆，带日志）: $TavernTask" -ForegroundColor Green
-        Write-Host "      包装器: $wrapper"
+        try {
+            Register-ScheduledTask -TaskName $TavernTask -Action $a1 -Trigger $t1 -Settings $s1 -RunLevel Highest -Force -ErrorAction Stop | Out-Null
+            Write-Host "  已注册计划任务（登录时启动酒馆，带日志）: $TavernTask" -ForegroundColor Green
+            Write-Host "      包装器: $wrapper"
+        } catch {
+            Write-Host "  x 注册计划任务失败：$($_.Exception.Message)" -ForegroundColor Red
+            Write-Host '    注册开机自启需要管理员权限，请用「以管理员身份运行」再试。' -ForegroundColor Yellow
+            $script:TaskInstallFailed = $true
+        }
     }
 
     if ($Config.bridge.enabled -and $BridgeTask) {
@@ -395,14 +443,19 @@ function Install-Tasks {
         $bErr = Join-Path $logRoot 'agnes-bridge.err.log'
         $wrapper2 = Join-Path $logRoot 'run-bridge.cmd'
         $content2 = "@echo off`r`ncd /d `"$ProjectDir`"`r`n`"$NodeExe`" `"$BridgeScriptPath`" --config `"$BridgeConfigPath`" 1>>`"$bOut`" 2>>`"$bErr`"`r`n"
-        [IO.File]::WriteAllText($wrapper2, $content2, $ansi)
+        [IO.File]::WriteAllText($wrapper2, $content2, $oem)
         $a2 = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\cmd.exe" -Argument "/c `"$wrapper2`"" -WorkingDirectory $ProjectDir
         $t2 = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERNAME"
         $s2 = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
             -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
-        Register-ScheduledTask -TaskName $BridgeTask -Action $a2 -Trigger $t2 -Settings $s2 -RunLevel Highest -Force | Out-Null
-        Write-Host "  已注册计划任务（登录时启动生图桥，带日志）: $BridgeTask" -ForegroundColor Green
-        Write-Host "      包装器: $wrapper2"
+        try {
+            Register-ScheduledTask -TaskName $BridgeTask -Action $a2 -Trigger $t2 -Settings $s2 -RunLevel Highest -Force -ErrorAction Stop | Out-Null
+            Write-Host "  已注册计划任务（登录时启动生图桥，带日志）: $BridgeTask" -ForegroundColor Green
+            Write-Host "      包装器: $wrapper2"
+        } catch {
+            Write-Host "  x 注册生图桥计划任务失败：$($_.Exception.Message)" -ForegroundColor Red
+            $script:TaskInstallFailed = $true
+        }
     }
 }
 
@@ -452,7 +505,8 @@ switch ($Action) {
     'where'             { Show-ConfigInfo }
     'logs'              { Show-Logs }
     'install-shortcuts' { Install-Shortcuts }
-    'install-tasks'     { Install-Tasks }
+    # 失败要带非零退出码，否则 install.ps1 会照着「安装完成」继续往下报喜
+    'install-tasks'     { Install-Tasks; if ($script:TaskInstallFailed) { exit 1 } }
     'bridge-start'      { Start-Bridge; Write-Host '  生图桥已处理' }
     'bridge-stop'       { Stop-Bridge; Write-Host '  生图桥已停止' }
     'start'             { Start-Tavern; Write-Host ''; if (-not $NoPause) { Read-Host '  按回车关闭窗口' } }
