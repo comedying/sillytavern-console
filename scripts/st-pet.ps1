@@ -1329,13 +1329,16 @@ $petHost.Add_MouseLeftButtonDown({
 # ② 但开关要放到「松手」才做：弹窗是 StaysOpen=False 的，按下就打开的话，
 #    同一次点击的松手会被它当成「点了空白处」，回头把自己关掉。
 $script:SquarePressed = $false
+# 事件参数千万别叫 $s：PowerShell 变量名不分大小写，$s 会沿着调用链把脚本级的
+# 设置表 $S 遮住（Apply-PetOpacity 里 $S['opacity'] 变空 → 设置页标签显示 0%、
+# 开面板的 Q 弹动画也一起失效）。用 $sender / $e 就没事。
 $squareHost.Add_MouseLeftButtonDown({
-    param($s, $e)
+    param($sender, $e)
     $e.Handled = $true
     $script:SquarePressed = $true
 })
 $squareHost.Add_MouseLeftButtonUp({
-    param($s, $e)
+    param($sender, $e)
     $e.Handled = $true
     if (-not $script:SquarePressed) { return }
     $script:SquarePressed = $false
