@@ -20,7 +20,7 @@
 
 - **隐藏后台运行**：以隐藏窗口方式启动 `node server.js`，不占任务栏、不挡视线
 - **中文菜单控制台**：启动 / 停止 / 重启 / 状态 / 日志 / 快捷方式 / 计划任务，一个界面全搞定
-- **桌面小挂件（桌宠）**：常驻角落的小人，点一下弹出按钮气泡，按状态换表情；能拖、能半透明、右键有菜单
+- **桌面小挂件（桌宠）**：常驻角落的小人，点一下弹气泡、点小方块开功能面板，按状态换表情；能拖、能半透明、右键有菜单
 - **自动显示访问地址**：本机回环、局域网 IP、Tailscale IP（装了 Tailscale 时）一次列清
 - **桌面快捷方式**：一键生成「Console / Start / Stop」三个 `.lnk`（图标取酒馆自己的 favicon）
 - **登录自启**：可选注册计划任务，登录 Windows 后自动把酒馆（和生图桥）拉起来
@@ -101,6 +101,19 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File scripts\st-pet.ps1
 - 平时半透明不碍事，鼠标移上去恢复清晰
 - 脚边挂一个状态点：绿=运行中，红=未运行
 
+实拍（点开看大图）：
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/pet-bubble.png" alt="点她一下弹出气泡"><br><sub>点她一下：气泡里是状态 + 启动 / 停止</sub></td>
+    <td width="50%"><img src="docs/screenshots/pet-panel.png" alt="点小方块展开功能面板"><br><sub>点右上角小方块：功能面板</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/pet-settings.png" alt="设置页"><br><sub>面板 → 设置：改完立刻生效</sub></td>
+    <td width="50%"><img src="docs/screenshots/pet-idle.png" alt="闲置状态的小人"><br><sub>平时：半透明的小人 + 脚边状态点</sub></td>
+  </tr>
+</table>
+
 #### 面板里的「设置」页
 
 不用去改配置文件，点面板里的 **设置** 就能调，改完立刻生效、自动记住：
@@ -136,7 +149,8 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File scripts\st-pet.ps1
 最省事的做法：面板 → **设置** → **换形象…**，选一张 PNG 就行。
 
 默认形象直接读酒馆自己的角色图（`<酒馆目录>\default\content\Seraphina\*.png`），
-所以**仓库里不含任何图片**，也不涉及转发别人的美术资源。
+所以**仓库里不含任何角色美术文件**，也不涉及转发别人的美术资源
+（上面截图里的形象就是酒馆自带的 Seraphina）。
 
 想用一套图**按状态换表情**，就在 `config.json` 里指一个目录：
 
@@ -187,6 +201,7 @@ st-console/
 │   ├── st-pet.ps1                    桌面小挂件（桌宠，默认用酒馆自带角色图）
 │   ├── agnes-sd-bridge.mjs           生图桥（A1111 兼容 → 你的生图 API）
 │   └── agnes-bridge.example.json     生图桥配置模板
+├── docs/screenshots/                 README 里的实拍截图
 ├── .secrets/                         私有配置（.gitignore 忽略，不会进仓库）
 └── logs/                             运行日志（.gitignore 忽略）
 ```
